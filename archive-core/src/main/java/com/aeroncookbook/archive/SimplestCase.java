@@ -42,21 +42,20 @@ import java.io.File;
 
 public class SimplestCase
 {
-    public static final String REPLICATION_CHANNEL = "aeron:udp?endpoint=localhost:0";
     public static final String CONTROL_REQUEST_CHANNEL = "aeron:udp?endpoint=localhost:8010";
     public static final String CONTROL_RESPONSE_CHANNEL = "aeron:udp?endpoint=localhost:0";
     private static final Logger LOGGER = LoggerFactory.getLogger(SimplestCase.class);
-    private final String channel = "aeron:ipc";
-    private final int streamCapture = 16;
-    private final int streamReplay = 17;
+    private final String mainDataChannel = "aeron:ipc";
+    private final int streamIdForRecording = 16;
+    private final int streamIdForReply = 17;
     private final int sendCount = 10_000;
 
     private final IdleStrategy idleStrategy = new SleepingIdleStrategy();
     private final ExpandableArrayBuffer buffer = new ExpandableArrayBuffer();
     private final File tempDir = Utils.createTempDir();
     boolean complete = false;
-    private AeronArchive aeronArchive;
-    private Aeron aeron;
+    private AeronArchive aeronArchiveWriter;
+    private Aeron mainAeronClient;
     private ArchivingMediaDriver mediaDriver;
 
     @SuppressWarnings("try")
@@ -79,8 +78,8 @@ public class SimplestCase
 
     private void cleanUp()
     {
-        CloseHelper.quietClose(aeronArchive);
-        CloseHelper.quietClose(aeron);
+        CloseHelper.quietClose(aeronArchiveWriter);
+        CloseHelper.quietClose(mainAeronClient);
         CloseHelper.quietClose(mediaDriver);
     }
 
@@ -89,16 +88,16 @@ public class SimplestCase
         try (AeronArchive reader = AeronArchive.connect(new AeronArchive.Context()
             .controlRequestChannel(CONTROL_REQUEST_CHANNEL)
             .controlResponseChannel(CONTROL_RESPONSE_CHANNEL)
-            .aeron(aeron)))
+            .aeron(mainAeronClient)))
         {
-            final long recordingId = findLatestRecording(reader, channel, streamCapture);
+            final long recordingId = findLatestRecording(reader, mainDataChannel, streamIdForRecording);
             final long position = AeronArchive.NULL_POSITION;
             final long length = Long.MAX_VALUE;
 
-            final long sessionId = reader.startReplay(recordingId, position, length, channel, streamReplay);
-            final String channelRead = ChannelUri.addSessionId(channel, (int)sessionId);
+            final long sessionId = reader.startReplay(recordingId, position, length, mainDataChannel, streamIdForReply);
+            final String channelRead = ChannelUri.addSessionId(mainDataChannel, (int)sessionId);
 
-            final Subscription subscription = reader.context().aeron().addSubscription(channelRead, streamReplay);
+            final Subscription subscription = reader.context().aeron().addSubscription(channelRead, streamIdForReply);
 
             while (!subscription.isConnected())
             {
@@ -115,9 +114,9 @@ public class SimplestCase
 
     private void write()
     {
-        aeronArchive.startRecording(channel, streamCapture, SourceLocation.LOCAL);
+        aeronArchiveWriter.startRecording(mainDataChannel, streamIdForRecording, SourceLocation.LOCAL);
 
-        try (ExclusivePublication publication = aeron.addExclusivePublication(channel, streamCapture))
+        try (ExclusivePublication publication = mainAeronClient.addExclusivePublication(mainDataChannel, streamIdForRecording))
         {
             while (!publication.isConnected())
             {
@@ -134,14 +133,14 @@ public class SimplestCase
             }
 
             final long stopPosition = publication.position();
-            final CountersReader countersReader = aeron.countersReader();
+            final CountersReader countersReader = mainAeronClient.countersReader();
             int counterId = RecordingPos.findCounterIdBySession(
-                countersReader, publication.sessionId(), aeronArchive.archiveId());
+                countersReader, publication.sessionId(), aeronArchiveWriter.archiveId());
             while (CountersReader.NULL_COUNTER_ID == counterId)
             {
                 idleStrategy.idle();
                 counterId = RecordingPos.findCounterIdBySession(
-                    countersReader, publication.sessionId(), aeronArchive.archiveId());
+                    countersReader, publication.sessionId(), aeronArchiveWriter.archiveId());
             }
 
             while (countersReader.getCounterValue(counterId) < stopPosition)
@@ -195,15 +194,14 @@ public class SimplestCase
             new Archive.Context()
                 .deleteArchiveOnStart(true)
                 .controlChannel(CONTROL_REQUEST_CHANNEL)
-                .replicationChannel(REPLICATION_CHANNEL)
                 .archiveDir(tempDir)
         );
 
-        aeron = Aeron.connect();
+        mainAeronClient = Aeron.connect();
 
-        aeronArchive = AeronArchive.connect(
+        aeronArchiveWriter = AeronArchive.connect(
             new AeronArchive.Context()
-                .aeron(aeron)
+                .aeron(mainAeronClient)
                 .controlRequestChannel(CONTROL_REQUEST_CHANNEL)
                 .controlResponseChannel(CONTROL_RESPONSE_CHANNEL)
         );
