@@ -44,11 +44,13 @@ public class SimplestCase
 {
     public static final String CONTROL_REQUEST_CHANNEL = "aeron:udp?endpoint=localhost:8010";
     public static final String CONTROL_RESPONSE_CHANNEL = "aeron:udp?endpoint=localhost:0";
+    // private static final java.util.logging.Logger LOGGER = LoggerFactory.getLogger(SimplestCase.class);
     private static final Logger LOGGER = LoggerFactory.getLogger(SimplestCase.class);
     private final String mainDataChannel = "aeron:ipc";
     private final int streamIdForRecording = 16;
     private final int streamIdForReply = 17;
-    private final int sendCount = 10_000;
+    // private final int sendCount = 10_000;
+    private final int sendCount = 100;
 
     private final IdleStrategy idleStrategy = new SleepingIdleStrategy();
     private final ExpandableArrayBuffer buffer = new ExpandableArrayBuffer();
@@ -85,6 +87,7 @@ public class SimplestCase
 
     private void read()
     {
+        // AeronArchive is for archive-client
         try (AeronArchive reader = AeronArchive.connect(new AeronArchive.Context()
             .controlRequestChannel(CONTROL_REQUEST_CHANNEL)
             .controlResponseChannel(CONTROL_RESPONSE_CHANNEL)
@@ -98,6 +101,8 @@ public class SimplestCase
             final String channelRead = ChannelUri.addSessionId(mainDataChannel, (int)sessionId);
 
             final Subscription subscription = reader.context().aeron().addSubscription(channelRead, streamIdForReply);
+
+            LOGGER.info("read(): recordingId:{}, position:{}, sessionId:{}, channelRead:{}", recordingId, position, sessionId, channelRead);
 
             while (!subscription.isConnected())
             {
@@ -114,12 +119,11 @@ public class SimplestCase
 
     private void write()
     {
-        LOGGER.info("aeronArchiveWriter.startRecording, streamIdForRecording {}", streamIdForRecording);
+        LOGGER.info("write(): aeronArchiveWriter.startRecording, streamIdForRecording {}", streamIdForRecording);
 
         aeronArchiveWriter.startRecording(mainDataChannel, streamIdForRecording, SourceLocation.LOCAL);
 
-        try (ExclusivePublication publication = 
-        mainAeronClient.addExclusivePublication(mainDataChannel, streamIdForRecording))
+        try (ExclusivePublication publication = mainAeronClient.addExclusivePublication(mainDataChannel, streamIdForRecording))
         {
             while (!publication.isConnected())
             {
@@ -135,6 +139,13 @@ public class SimplestCase
                 }
             }
 
+            LOGGER.info("write(): publication `offer` completed, start CountersReader wait.");
+
+            /*
+Because publication.position() only tells you how much data the publisher has offered, not how much the Archive has actually recorded.
+The CountersReader part waits until the Archive recording has caught up with the publication.
+
+             */
             final long stopPosition = publication.position();
             final CountersReader countersReader = mainAeronClient.countersReader();
             int counterId = RecordingPos.findCounterIdBySession(
@@ -150,6 +161,8 @@ public class SimplestCase
             {
                 idleStrategy.idle();
             }
+
+            LOGGER.info("write(): done");
         }
     }
 
@@ -181,7 +194,7 @@ public class SimplestCase
     public void archiveReader(final DirectBuffer buffer, final int offset, final int length, final Header header)
     {
         final int valueRead = buffer.getInt(offset);
-        LOGGER.info("Received {}", valueRead);
+        LOGGER.info("archiveReader(): Received {}", valueRead);
         if (valueRead == sendCount)
         {
             complete = true;
@@ -190,16 +203,21 @@ public class SimplestCase
 
     public void setup()
     {
+        // Archive.Context = server-side 
+        // AeronArchive.Context = client-side
+
+
         LOGGER.info("ArchivingMediaDriver.launch() with controlChannel {} ", 
         CONTROL_REQUEST_CHANNEL, ", tmpDir", tempDir);
         mediaDriver = ArchivingMediaDriver.launch(
             new MediaDriver.Context()
                 .spiesSimulateConnection(true)
                 .dirDeleteOnStart(true),
-            new Archive.Context()
+            new Archive.Context() // server-side, config archive itself
                 .deleteArchiveOnStart(true)
                 .controlChannel(CONTROL_REQUEST_CHANNEL)
                 .archiveDir(tempDir)
+                .replicationChannel("aeron:udp?endpoint=localhost:0")
         );
 
         mainAeronClient = Aeron.connect();
@@ -207,7 +225,7 @@ public class SimplestCase
         LOGGER.info("AeronArchive connect with controlRequestChannel {} ", 
         CONTROL_REQUEST_CHANNEL, ", controlResponseChannel {}", CONTROL_RESPONSE_CHANNEL);
         aeronArchiveWriter = AeronArchive.connect(
-            new AeronArchive.Context()
+            new AeronArchive.Context() // client side to control existing archive
                 .aeron(mainAeronClient)
                 .controlRequestChannel(CONTROL_REQUEST_CHANNEL)
                 .controlResponseChannel(CONTROL_RESPONSE_CHANNEL)
