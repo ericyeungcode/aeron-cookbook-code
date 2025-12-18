@@ -5,3 +5,17 @@ Before running the docker compose, you will need to run a full gradle build in t
 Then, just run `docker compose up` (or `docker-compose up`, depending on your Docker version).
 
 Note: the docker compose file in this folder requires a recent version of Docker with at least 4Gb memory assigned. 2Gb of that is assigned to /dev/shm.
+
+
+# How to run
+
+```bash
+cd ~/aeron-cookbook-code
+./gradlew :archive-multi-host:archive-host:uberJar
+./gradlew :archive-multi-host:archive-client:uberJar
+
+
+cd ./archive-multi-host
+docker compose up
+
+```

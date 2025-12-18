@@ -33,3 +33,19 @@ testing {
         }
     }
 }
+
+
+application {
+   mainClass.set(project.findProperty("mainClass")?.toString() ?: "com.example.DefaultMain")
+
+   /*
+   Fix unsafeApi err:
+   Exception in thread "main" java.lang.IllegalAccessError: class org.agrona.UnsafeApi (in unnamed module @0x5ce81285) cannot access class jdk.internal.misc.Unsafe (in module java.base) because module java.base does not export jdk.internal.misc to unnamed module
+    */   
+   applicationDefaultJvmArgs = listOf(
+       "--add-opens", "java.base/jdk.internal.misc=ALL-UNNAMED",
+       "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
+       "--add-opens", "java.base/java.nio=ALL-UNNAMED",
+       "--add-opens", "java.base/sun.misc=ALL-UNNAMED"
+   )   
+}

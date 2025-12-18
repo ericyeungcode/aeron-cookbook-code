@@ -114,9 +114,12 @@ public class SimplestCase
 
     private void write()
     {
+        LOGGER.info("aeronArchiveWriter.startRecording, streamIdForRecording {}", streamIdForRecording);
+
         aeronArchiveWriter.startRecording(mainDataChannel, streamIdForRecording, SourceLocation.LOCAL);
 
-        try (ExclusivePublication publication = mainAeronClient.addExclusivePublication(mainDataChannel, streamIdForRecording))
+        try (ExclusivePublication publication = 
+        mainAeronClient.addExclusivePublication(mainDataChannel, streamIdForRecording))
         {
             while (!publication.isConnected())
             {
@@ -187,6 +190,8 @@ public class SimplestCase
 
     public void setup()
     {
+        LOGGER.info("ArchivingMediaDriver.launch() with controlChannel {} ", 
+        CONTROL_REQUEST_CHANNEL, ", tmpDir", tempDir);
         mediaDriver = ArchivingMediaDriver.launch(
             new MediaDriver.Context()
                 .spiesSimulateConnection(true)
@@ -199,6 +204,8 @@ public class SimplestCase
 
         mainAeronClient = Aeron.connect();
 
+        LOGGER.info("AeronArchive connect with controlRequestChannel {} ", 
+        CONTROL_REQUEST_CHANNEL, ", controlResponseChannel {}", CONTROL_RESPONSE_CHANNEL);
         aeronArchiveWriter = AeronArchive.connect(
             new AeronArchive.Context()
                 .aeron(mainAeronClient)
