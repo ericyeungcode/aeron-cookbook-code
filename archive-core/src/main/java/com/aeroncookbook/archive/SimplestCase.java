@@ -97,6 +97,7 @@ public class SimplestCase
             final long position = AeronArchive.NULL_POSITION;
             final long length = Long.MAX_VALUE;
 
+            // assocate streamIdForRecording and streamIdForReply
             final long sessionId = reader.startReplay(recordingId, position, length, mainDataChannel, streamIdForReply);
             final String channelRead = ChannelUri.addSessionId(mainDataChannel, (int)sessionId);
 
@@ -119,10 +120,10 @@ public class SimplestCase
 
     private void write()
     {
-        LOGGER.info("write(): aeronArchiveWriter.startRecording, streamIdForRecording {}", streamIdForRecording);
+        LOGGER.info("write(): aeronArchiveWriter.startRecording");
 
+        // streamIdForRecording to associate RECORDING and PUBLICATION
         aeronArchiveWriter.startRecording(mainDataChannel, streamIdForRecording, SourceLocation.LOCAL);
-
         try (ExclusivePublication publication = mainAeronClient.addExclusivePublication(mainDataChannel, streamIdForRecording))
         {
             while (!publication.isConnected())
@@ -217,13 +218,12 @@ The CountersReader part waits until the Archive recording has caught up with the
                 .deleteArchiveOnStart(true)
                 .controlChannel(CONTROL_REQUEST_CHANNEL)
                 .archiveDir(tempDir)
-                .replicationChannel("aeron:udp?endpoint=localhost:0")
+                .replicationChannel("aeron:udp?endpoint=localhost:0") // need to add this otherwise error: replication channel is not set
         );
 
         mainAeronClient = Aeron.connect();
 
-        LOGGER.info("AeronArchive connect with controlRequestChannel {} ", 
-        CONTROL_REQUEST_CHANNEL, ", controlResponseChannel {}", CONTROL_RESPONSE_CHANNEL);
+        LOGGER.info("create archive write-client, controlRequestChannel {} ", CONTROL_REQUEST_CHANNEL, ", controlResponseChannel {}", CONTROL_RESPONSE_CHANNEL);
         aeronArchiveWriter = AeronArchive.connect(
             new AeronArchive.Context() // client side to control existing archive
                 .aeron(mainAeronClient)
